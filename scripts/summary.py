@@ -12,9 +12,9 @@ summaryTitle = ['宝贝标题', '宝贝总数']
 orderStatus = ['等待商家发货']
 
 sIdx = 3  #订单状态
-uIdx = 4  #买家会员名
 pIdx = 25 #自提网点
 telIdx = 27 #预约电话
+uIdx = 28  #预约人
 tIdx = 34 #宝贝标题
 priceIdx = 35 # 商品价格
 cIdx = 37 #宝贝总数量 
@@ -23,7 +23,6 @@ messageIdx = 41 #订单留言
 maxColumn = 58 # 总列数
 sortedData = {} #保存水果提取地信息
 productName = {} 
-userInfo = {} #保存用户信息
 
 def gbk2utf8(string):
     return string.decode('gb18030').encode('utf8')
@@ -39,7 +38,7 @@ def loadData(csvPath):
                     header= row 
                     h = [gbk2utf8(d) for d in header]
                     sIdx = h.index("订单状态")
-                    uIdx = h.index("买家会员名")
+                    uIdx = h.index("预约人")
                     pIdx = h.index("自提网点")
                     tIdx = h.index("宝贝标题")
                     cIdx = h.index("宝贝总数量")
@@ -61,11 +60,13 @@ def loadData(csvPath):
 
                         userTel = row[telIdx]
                         userMessage = row[messageIdx]
-                        if not sortedData[userAddress]['fruitCardData'].has_key(userName):
-                            sortedData[userAddress]['fruitCardData'][userName] = []
-                            userInfo[userName] = {'userTel': userTel, 'userAddress': userAddress, 'userMessage':userMessage}
 
-                        sortedData[userAddress]['fruitCardData'][userName].append({'fruitName': fruitName, "fruitAmount": fruitAmount, "fruitPrice": fruitPrice})
+                        uniqueKey = userTel
+
+                        if not sortedData[userAddress]['fruitCardData'].has_key(uniqueKey):
+                            sortedData[userAddress]['fruitCardData'][uniqueKey] = {'userInfo': {'userName':userName, 'userTel': userTel, 'userAddress': userAddress, 'userMessage':userMessage}, 'fruitInfo': []}
+                            # userInfo[userName] = {'userTel': userTel, 'userAddress': userAddress, 'userMessage':userMessage}
+                        sortedData[userAddress]['fruitCardData'][uniqueKey]['fruitInfo'].append({'fruitName': fruitName, "fruitAmount": fruitAmount, "fruitPrice": fruitPrice})
                     
                     if len(row[tIdx]) > 0:
                         if not productName.has_key(row[tIdx]):
@@ -93,7 +94,8 @@ def dumpCellSummary(outputPath, header,data):
             if len(v) > 0:
                 spamwriter.writerow([gbk2utf8(k),reduce(lambda x,y:int(x)+int(y),v)]);
 
-def dumpFruit(outputPath, data):
+def dumpFruit(outputPath,fruitCardData):
+    #print(fruitCardData)
     html_start_template = '''
     <html>
 <head>
@@ -126,21 +128,22 @@ def dumpFruit(outputPath, data):
     with open(outputPath, 'w') as html:
         html.write(html_start_template)
         fruitDataIndex = 0
-        for k, v in data.iteritems():
-            userName = gbk2utf8(k)
-            address = gbk2utf8(userInfo[k]["userAddress"])
-            message = gbk2utf8(userInfo[k]["userMessage"])
-            tel = userInfo[k]["userTel"]
+        for k, v in fruitCardData.iteritems():
+            userName = gbk2utf8(v['userInfo']["userName"])
+            address = gbk2utf8(v['userInfo']["userAddress"])
+            message = gbk2utf8(v['userInfo']["userMessage"])
+            tel = v['userInfo']["userTel"]
             #print(address,tel, message, userName)
 
             fruitData = []
+            fruitInfo = v['fruitInfo']
             while True:
                 #最多存放6行水果信息
-                if (len(v) > 6):
-                    fruitData.append(v[0:6])
-                    v = v[6:]
+                if (len(fruitInfo) > 6):
+                    fruitData.append(fruitInfo[0:6])
+                    fruitInfo =fruitInfo[6:]
                 else:
-                    fruitData.append(v)
+                    fruitData.append(fruitInfo)
                     break
 
             for fruit in fruitData:
