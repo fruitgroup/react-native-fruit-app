@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 import sys
 import os
+import shutil
 import csv
 from string import Template
 
@@ -20,9 +21,8 @@ cIdx = 37 #宝贝总数量
 messageIdx = 41 #订单留言
 
 maxColumn = 58 # 总列数
-pickupData = {} #保存水果提取地信息
+sortedData = {} #保存水果提取地信息
 productName = {} 
-userCardInfo = {} #保存用户卡片信息
 userInfo = {} #保存用户信息
 
 def gbk2utf8(string):
@@ -49,16 +49,11 @@ def loadData(csvPath):
                     #print (gbk2utf8(",".join(row))) 
                 elif(gbk2utf8(row[sIdx]) in orderStatus):
                     if len(row[pIdx]) > 0:
-                        if not pickupData.has_key(row[pIdx]):
-                            pickupData[row[pIdx]] = []
-                        pickupData[row[pIdx]].append(row) #[gbk2utf8(d) for d in row]
-
-                    if len(row[tIdx]) > 0:
-                        if not productName.has_key(row[tIdx]):
-                            productName[row[tIdx]] = []
-                        productName[row[tIdx]].append(row[cIdx])
-
-                    if len(row[uIdx]) > 0:
+                        userAddress = row[pIdx]
+                        if not sortedData.has_key(userAddress):
+                            sortedData[userAddress] = {'rawData':[], 'fruitCardData': {}}
+                        sortedData[userAddress]['rawData'].append(row) #[gbk2utf8(d) for d in row]
+                        
                         userName = row[uIdx]
                         fruitName = row[tIdx]
                         fruitAmount = row[cIdx]
@@ -66,142 +61,72 @@ def loadData(csvPath):
 
                         userTel = row[telIdx]
                         userMessage = row[messageIdx]
-                        userAddress = row[pIdx]
-                        if not userCardInfo.has_key(userName):
-                            userCardInfo[userName] = []
+                        if not sortedData[userAddress]['fruitCardData'].has_key(userName):
+                            sortedData[userAddress]['fruitCardData'][userName] = []
                             userInfo[userName] = {'userTel': userTel, 'userAddress': userAddress, 'userMessage':userMessage}
 
-                        userCardInfo[userName].append({'fruitName': fruitName, "fruitAmount": fruitAmount, "fruitPrice": fruitPrice})
+                        sortedData[userAddress]['fruitCardData'][userName].append({'fruitName': fruitName, "fruitAmount": fruitAmount, "fruitPrice": fruitPrice})
+                    
+                    if len(row[tIdx]) > 0:
+                        if not productName.has_key(row[tIdx]):
+                            productName[row[tIdx]] = []
+                        productName[row[tIdx]].append(row[cIdx])
 
 
-if __name__ == '__main__':
-    loadData(sys.argv[1])
-    #print(productName)
-    # summary of product
-    filepath = '宝贝汇总.csv'
-    htmlpath = '打印订单信息.html'
-    
-    print("==> 输出路径：" + os.getcwd() + "/" +filepath);
-    with open(filepath, 'wb') as csvfile:
+
+def dumpCellSummary(outputPath, header,data):
+    summary = {}
+    with open(outputPath, 'wb') as csvfile:
         spamwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        spamwriter.writerow(summaryTitle);
-        for k, v in productName.iteritems():
+        spamwriter.writerow([gbk2utf8(d) for d in header]);
+        for row in data:
+            spamwriter.writerow([gbk2utf8(d) for d in row]);
+            if len(row[tIdx]) > 0:
+                if not summary.has_key(row[tIdx]):
+                    summary[row[tIdx]] = []
+                summary[row[tIdx]].append(row[cIdx])
+
+        spamwriter.writerow(['============>']);
+        spamwriter.writerow(['Summary']);
+        spamwriter.writerow(['============>']);
+        for k,v in summary.iteritems():
             if len(v) > 0:
                 spamwriter.writerow([gbk2utf8(k),reduce(lambda x,y:int(x)+int(y),v)]);
 
-    # summary of pickup place
-    for k, v in pickupData.iteritems():
-        summary = {}
-        filePath = gbk2utf8(k) + '.csv'
-        print(filePath)
-        with open(filePath, 'wb') as csvfile:
-            spamwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            spamwriter.writerow([gbk2utf8(d) for d in header]);
-            for row in v:
-                spamwriter.writerow([gbk2utf8(d) for d in row]);
-                if len(row[tIdx]) > 0:
-                    if not summary.has_key(row[tIdx]):
-                        summary[row[tIdx]] = []
-                    summary[row[tIdx]].append(row[cIdx])
-
-            spamwriter.writerow(['============>']);
-            spamwriter.writerow(['Summary']);
-            spamwriter.writerow(['============>']);
-            for k,v in summary.iteritems():
-                if len(v) > 0:
-                    spamwriter.writerow([gbk2utf8(k),reduce(lambda x,y:int(x)+int(y),v)]);
-
-    # summary user card info
+def dumpFruit(outputPath, data):
     html_start_template = '''
-    <head>
-	<meta charset="UTF-8">
-	<title>用户订单</title>
-	<style>
-		* {
-			margin: 0px;
-			padding: 0px;
-		}
-
-		p {
-			margin: 0px 5px;
-		}
-
-		div.card {
-			margin: 50px 50px;
-			width: 70mm;
-			height: 50mm;
-			border: 1px dashed #000;
-			background-color: white;
-			position: relative;
-		}
-
-		p.user-name {
-			font-weight: bold;
-			font-size: 20px;
-		}
-
-		p.user-info, p.fruit-info {
-			font-size: 11px;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-		}
-
-		p.total {
-			font-size: 14px;
-			font-weight: bold;
-			text-align: right;
-			position: absolute;
-			bottom: 5px;
-			right: 10px;
-		}
-
-		p.fruit-categroy-title {
-			font-weight: bold;
-			font-size: 12px;
-			margin-top: 8px;
-		}
-
-		ul {
-			margin-top: 2px;
-			font-size: 11px;
-		}
-
-		ul li {
-			margin-left: 5px;
-			list-style-type: none;
-		}
-
-		span {
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;	
-			display: inline-block;
-		}
-		span.fruitname {
-			width: 40mm;
-		}
-
-		span.amount,
-		span.price {
-			width: 15mm;
-		}
-	</style>
+    <html>
+<head>
+    <meta charset="UTF-8">
 </head>
+<table border="1">
+    <thead>
+        <th>序号</th>
+        <th>姓名</th>
+        <th>电话</th>
+        <th>地址</th>
+        <th>水果-1</th>
+        <th>水果-2</th>
+        <th>水果-3</th>
+        <th>水果-4</th>
+        <th>水果-5</th>
+        <th>水果-6</th>
+        <th>总金额</th>
+        <th>留言</th>
+    </thead>
 
-<body>
-	
+    <tbody>
     '''
     html_end_template = '''
-    	
-</body>
+        </tbody>
+</table>
 
 </html>
-
     '''
-    with open(htmlpath, 'w') as html:
+    with open(outputPath, 'w') as html:
         html.write(html_start_template)
-        for k, v in userCardInfo.iteritems():
+        fruitDataIndex = 0
+        for k, v in data.iteritems():
             userName = gbk2utf8(k)
             address = gbk2utf8(userInfo[k]["userAddress"])
             message = gbk2utf8(userInfo[k]["userMessage"])
@@ -210,40 +135,74 @@ if __name__ == '__main__':
 
             fruitData = []
             while True:
-                if (len(v) > 4):
-                    fruitData.append(v[0:4])
-                    v = v[4:]
+                #最多存放6行水果信息
+                if (len(v) > 6):
+                    fruitData.append(v[0:6])
+                    v = v[6:]
                 else:
                     fruitData.append(v)
                     break
 
             for fruit in fruitData:
+                fruitDataIndex += 1
                 html.write(Template('''
-                <div class="card">
-                <p class="user-name">$userName</p>
-            <p class="user-info">电话：$tel</p>
-            <p class="user-info">留言：$message</p>
-            <p class="user-info ">地址：$address</p>
-            <p class="fruit-categroy-title ">水果种类</p>
-                ''').safe_substitute({'userName': userName, 'tel': tel, 'message': message, 'address': address}))
+                       <tr>
+            <td>$orderList</td>
+            <td>$userName</td>
+            <td>$tel</td>
+            <td>$address</td>
+            ''').safe_substitute({'userName': userName, 'tel': tel, 'address': address, 'orderList': str(fruitDataIndex)}))
 
                 totalPrice = 0
+                maxFruitData = 6
                 for cardInfo in fruit:
+                    maxFruitData -= 1
                     fruitName =  gbk2utf8(cardInfo ['fruitName'])
                     fruitAmount = cardInfo['fruitAmount']
                     fruitPrice = cardInfo['fruitPrice']
                     totalPrice += float(fruitPrice)
-
-                    html.write(Template('''
-                        <p class="fruit-info"><span class="fruitname">$fruitName</span><span class="amount">x$fruitAmount</span> <span class="price">$fruitPrice元</span></p>
-                ''').safe_substitute({'fruitName': fruitName, 'fruitAmount': fruitAmount, 'fruitPrice': fruitPrice }))    
-                        
+                    html.write(Template('''<td>$fruitAmount x  $fruitName </td>''').safe_substitute({'fruitName': fruitName, 'fruitAmount': fruitAmount}))
                 
+                # 补空缺
+                while maxFruitData > 0:
+                    maxFruitData -= 1
+                    html.write('''<td></td>''')
+ 
                 html.write(Template('''
-                    <p class="total">共计：$totalPrice元</p>
-                    </div>
-                ''').safe_substitute({'totalPrice': totalPrice}))         
+            <td>$totalPrice</td>
+            <td>$message</td>
+            </tr> ''').safe_substitute({'totalPrice': totalPrice, 'message': message}))         
                     
         html.write(html_end_template)
-    print("==> 订单打印文件：" + os.getcwd() + "/" + htmlpath);
+
+if __name__ == '__main__':
+    loadData(sys.argv[1])
+    #print(productName)
+    # summary of product
+    outputDir = os.path.join(os.getcwd(), '订单信息')
+    if not os.path.exists(outputDir):
+        os.makedirs(outputDir)
+    print("==> 输出路径：" + outputDir);
+
+    csvPath = os.path.join(outputDir, '宝贝汇总.csv')
+    with open(csvPath, 'w') as csvfile:
+        spamwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        spamwriter.writerow(summaryTitle);
+        for k, v in productName.iteritems():
+            if len(v) > 0:
+                spamwriter.writerow([gbk2utf8(k),reduce(lambda x,y:int(x)+int(y),v)]);
+
+    # summary
+    for k, v in sortedData.iteritems():
+        directory = gbk2utf8(k)
+        filePath = os.path.join(outputDir, directory)
+        if os.path.exists(filePath):
+            shutil.rmtree(filePath)
+        os.makedirs(filePath)
+        fullPath = os.path.join(filePath, '订单摘要.csv')
+        xlsPath = os.path.join(filePath, '订单打印信息.xls')
+        dumpCellSummary(fullPath, header, v['rawData'])
+        dumpFruit(xlsPath, v['fruitCardData'])
+        #print(filePath)
+
 
