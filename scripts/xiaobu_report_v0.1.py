@@ -4,6 +4,7 @@
 xiao bu data analysis
 '''
 import os
+import sys
 import shutil
 import csv
 import re
@@ -75,7 +76,7 @@ class FruitLabel(object):
             self.message = message
             self.fruits = [] #{'name', 'amount', 'price'}  
         
-    TITLES = ("姓名", "电话", "地址", "水果-1数量","水果-1", "水果-2数量", "水果-2", "水果-3数量", "水果-3", "水果-4数量", "水果-4", "水果-5数量", "水果-5", "总金额", "留言")
+    TITLES = ("序号", "姓名", "电话", "地址", "水果-1数量","水果-1", "水果-2数量", "水果-2", "水果-3数量", "水果-3", "水果-4数量", "水果-4", "水果-5数量", "水果-5", "总金额", "留言")
     
     def __init__(self, fruit_data):
         self.__labels = []
@@ -95,6 +96,7 @@ class FruitLabel(object):
 
         sorted_data = {}
         for index, tel_number in enumerate(data_of_numbers):
+
             if not sorted_data.has_key(tel_number):
                 fruit_label = FruitLabel.Label(tel_number, data_of_users[index], data_of_addresss[index], data_of_messages[index])
                 sorted_data[tel_number] = fruit_label
@@ -116,7 +118,7 @@ class FruitLabel(object):
         if self.__labels.__len__() == 0:
             self.__parser_data()
 
-        for label in self.__labels:
+        for idx, label in enumerate(self.__labels):
             fruit_infos = []
             total_prices = 0
             max_fruit_categories = FruitLabel.MAX_PRINTING_FRUIT
@@ -125,7 +127,7 @@ class FruitLabel(object):
                 fruit_price = fruit['price'] 
                 fruit_name = fruit['name']
                 fruit_infos.append(fruit_amount)
-                fruit_infos.append("%s x %s" % (fruit_amount, fruit_name))
+                fruit_infos.append("x %s" % (fruit_name))
                 total_prices += (int(fruit_amount) * float(fruit_price))
                 max_fruit_categories -= 1
 
@@ -137,7 +139,7 @@ class FruitLabel(object):
             fruit_infos.append(total_prices)
             fruit_infos.append(label.message)
 
-            row = [label.user, label.tel, label.address]
+            row = [idx+1, label.user, label.tel, label.address]
             row.extend(fruit_infos)
 
             rows.append(row)
@@ -257,7 +259,7 @@ class Utils(object):
                 spamwriter.writerow(row)
 
 if  __name__ == '__main__':
-    CSV_DATA_PATH = '/Users/tilde/Desktop/youzan.csv'
+    CSV_DATA_PATH = sys.argv[1]
     raw_data = Utils.csv_data_from_file(CSV_DATA_PATH)
     yz = DataParser(raw_data)
     yz.filte_data('订单状态', ('等待商家发货'))
