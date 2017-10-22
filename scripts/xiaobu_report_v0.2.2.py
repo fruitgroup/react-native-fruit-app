@@ -10,6 +10,7 @@ import csv
 import re
 import datetime
 import time
+import codecs
 # from string import Template
 
 class DataParser(object):
@@ -384,6 +385,7 @@ class Utils(object):
     def write_data_to_csv(datas, csv_file_path):
         ''' write data to csv file '''
         with open(csv_file_path, 'wb') as csvfile:
+            csvfile.write(codecs.BOM_UTF8)
             spamwriter = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
             for row in datas:
                 spamwriter.writerow(row)
