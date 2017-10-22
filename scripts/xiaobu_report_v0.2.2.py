@@ -88,6 +88,7 @@ class FruitLabel(object):
     def __parser_data(self):
         data_parser = DataParser(self.fruit_data)
         label_data = data_parser.get_data()
+        data_of_orders = data_parser.get_data_from_column_title(XiaoBuReport.TITLE_ORDER_ID, label_data)
         data_of_users = data_parser.get_data_from_column_title(XiaoBuReport.TITLE_USER_NAME, label_data)
         data_of_numbers = data_parser.get_data_from_column_title(XiaoBuReport.TITLE_USER_PHONE, label_data)
         data_of_addresss = data_parser.get_data_from_column_title(XiaoBuReport.TITLE_COMMUNITY_POINT, label_data)
@@ -97,23 +98,18 @@ class FruitLabel(object):
         data_of_fruit_prices = data_parser.get_data_from_column_title(XiaoBuReport.TITLE_PRODUCT_PRICE, label_data)
 
         sorted_data = {}
-        for index, tel_number in enumerate(data_of_numbers):
+        for index, order_id in enumerate(data_of_orders):
+            user_name =  data_of_users[index]
+            tel_number = data_of_numbers[index]
 
-            if not sorted_data.has_key(tel_number):
-                fruit_label = FruitLabel.Label(tel_number, data_of_users[index], data_of_addresss[index], data_of_messages[index])
-                sorted_data[tel_number] = fruit_label
+            address = XiaoBuReport.format_community_name(data_of_addresss[index]) 
+            if not sorted_data.has_key(order_id):
+                fruit_label = FruitLabel.Label(tel_number, user_name, address, data_of_messages[index])
+                sorted_data[order_id] = fruit_label
             
-            sorted_data[tel_number].fruits.append({'name': data_of_fruit_names[index], 'amount': data_of_fruit_amounts[index], 'price': data_of_fruit_prices[index]})
+            sorted_data[order_id].fruits.append({'name': data_of_fruit_names[index], 'amount': data_of_fruit_amounts[index], 'price': data_of_fruit_prices[index]})
         
-        for fruit_label in sorted_data.values():
-            if not fruit_label.fruits.__len__() > FruitLabel.MAX_PRINTING_FRUIT:
-                self.__labels.append(fruit_label)
-            else:
-                sub_fruit_label = FruitLabel.Label(fruit_label.tel, fruit_label.user, fruit_label.address, fruit_label.message)
-                sub_fruit_label.fruits = fruit_label.fruits[FruitLabel.MAX_PRINTING_FRUIT:]
-                fruit_label.fruits = fruit_label.fruits[:FruitLabel.MAX_PRINTING_FRUIT]
-                self.__labels.append(fruit_label)
-                self.__labels.append(sub_fruit_label)
+        self.__labels = sorted_data.values()
 
     def get_datas(self):
         rows = []
@@ -121,36 +117,40 @@ class FruitLabel(object):
             self.__parser_data()
 
         for idx, label in enumerate(self.__labels):
-            fruit_infos = []
-            total_prices = 0
-            max_fruit_categories = FruitLabel.MAX_PRINTING_FRUIT
-            for fruit in label.fruits:
-                fruit_amount = fruit['amount']
-                fruit_price = fruit['price'] 
-                fruit_name = fruit['name']
-                fruit_infos.append(fruit_amount)
-                fruit_infos.append("x %s" % (fruit_name))
-                total_prices += (int(fruit_amount) * float(fruit_price))
-                max_fruit_categories -= 1
+            fruits = label.fruits
 
-            #水果不够Max时用空字符填充。
-            while max_fruit_categories > 0:
-                fruit_infos.append("")
-                fruit_infos.append("")
-                max_fruit_categories -= 1
-            fruit_infos.append(total_prices)
-            fruit_infos.append(label.message)
+            while fruits.__len__() > 0:
+                fruit_infos = []
+                total_prices = 0
+                max_fruit_categories = FruitLabel.MAX_PRINTING_FRUIT
+                for fruit in fruits[0:5]:
+                    fruit_amount = fruit['amount']
+                    fruit_price = fruit['price'] 
+                    fruit_name = fruit['name']
+                    fruit_infos.append(fruit_amount)
+                    fruit_infos.append("x %s" % (fruit_name))
+                    total_prices += (int(fruit_amount) * float(fruit_price))
+                    max_fruit_categories -= 1
 
-            row = [idx+1, label.user, label.tel, label.address]
-            row.extend(fruit_infos)
+                #水果不够Max时用空字符填充。
+                while max_fruit_categories > 0:
+                    fruit_infos.append("")
+                    fruit_infos.append("")
+                    max_fruit_categories -= 1
+                fruit_infos.append(total_prices)
+                fruit_infos.append(label.message)
 
-            rows.append(row)
+                row = [idx+1, label.user, label.tel, label.address]
+                row.extend(fruit_infos)
+                rows.append(row)
+                fruits = fruits[5:]
 
         return rows
 
 class XiaoBuReport(object):
     ''' Xiao bu report generator'''
 
+    TITLE_ORDER_ID = '订单ID/采购单ID'
     TITLE_COMMUNITY_POINT = '自提网点'
     TITLE_ORDER_STATUS = '订单状态'
     TITLE_PRODUCT_NAME = '宝贝标题'
@@ -181,6 +181,13 @@ class XiaoBuReport(object):
         '18040036608': '冮星光',
         '18624034797': '邓铁梅',
         }
+
+    @staticmethod
+    def format_community_name(title):
+        ''' 格式化小区名 '''
+        m = re.match('^(.*)\s*[-]', title)
+        name = m.group(1) if m else title
+        return name.strip()
 
     def __init__(self, report_folder):
         self.__path = os.path.join(os.getcwd(),report_folder)
@@ -253,15 +260,14 @@ class XiaoBuReport(object):
         xiaobo_turnover = 0
 
         for row in datas:
-            community_name = row[index_of_community]
+            community_name = XiaoBuReport.format_community_name(row[index_of_community])
             user_payment_amount = float(row[index_of_payment_amount])
             timestamp = time.mktime(time.strptime(row[index_of_order_create_date], '%Y-%m-%d %H:%M:%S'))
             user_tel = row[index_of_tel]
-            m = re.match('.*\s+(\d+)\s*$', community_name)
+            m = re.match('.*\s+(\d+)\s*$', row[index_of_community])
             tel = m.group(1) if m else "未知电话"
             user = XiaoBuReport.DRI_TEL_MAP[tel] if XiaoBuReport.DRI_TEL_MAP.has_key(tel) else "未知负责人"
-
-            if not analysis_entries.has_key(tel):
+            if not analysis_entries.has_key(community_name):
                 entry = {
                 'tel': tel, 
                 'user': user, 
@@ -272,15 +278,15 @@ class XiaoBuReport(object):
                 'end_timestamp': timestamp,
                 'dri_payment': 0.0
                 }
-                analysis_entries[tel] = entry
+                analysis_entries[community_name] = entry
             
-            analysis_entries[tel]['orders_of_count'] += 1
-            analysis_entries[tel]['community_turnover'] += user_payment_amount
-            analysis_entries[tel]['start_timestamp'] = timestamp if analysis_entries[tel]['start_timestamp'] > timestamp else analysis_entries[tel]['start_timestamp']
-            analysis_entries[tel]['end_timestamp'] = timestamp if analysis_entries[tel]['end_timestamp'] < timestamp else analysis_entries[tel]['end_timestamp']
+            analysis_entries[community_name]['orders_of_count'] += 1
+            analysis_entries[community_name]['community_turnover'] += user_payment_amount
+            analysis_entries[community_name]['start_timestamp'] = timestamp if analysis_entries[community_name]['start_timestamp'] > timestamp else analysis_entries[community_name]['start_timestamp']
+            analysis_entries[community_name]['end_timestamp'] = timestamp if analysis_entries[community_name]['end_timestamp'] < timestamp else analysis_entries[community_name]['end_timestamp']
 
             if tel == user_tel:
-                analysis_entries[tel]['dri_payment'] += user_payment_amount
+                analysis_entries[community_name]['dri_payment'] += user_payment_amount
 
             xiaobo_turnover += user_payment_amount
 
@@ -316,7 +322,7 @@ class XiaoBuReport(object):
 
         idx = 1
         report_data = [sales_report_title]
-        for tel, communities_data in sales_entries.iteritems():
+        for communities_data in sales_entries.values():
             community = communities_data['community']
             user = communities_data['user']
             tel = communities_data['tel']
@@ -346,7 +352,7 @@ class XiaoBuReport(object):
 
         idx = 1
         report_data = [revenue_report_title]
-        for tel, communities_data in revenue_entries.iteritems():
+        for communities_data in revenue_entries.values():
             community = communities_data['community']
             user = communities_data['user']
             tel = communities_data['tel']
