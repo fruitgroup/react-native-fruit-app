@@ -186,12 +186,13 @@ class XiaoBuReport(object):
     @staticmethod
     def format_community_name(title):
         ''' 格式化小区名 '''
-        m = re.match('^(.*)\s*[-]', title)
+        m = re.match('^(.*\s*[-]\s*.*?)\s+', title)
         name = m.group(1) if m else title
         return name.strip()
 
     def __init__(self, report_folder):
         self.__path = os.path.join(os.getcwd(),report_folder)
+        self.__community_labels = {}
 
     def get_report_path(self):
         ''' get report folder path '''
@@ -304,12 +305,15 @@ class XiaoBuReport(object):
         fruit_datas = self.__fruit_summary_data(purchase_data)
         Utils.write_data_to_xls(fruit_datas[0:3], purchase_file_path)
 
-    def report_printing_information(self, printing_data, printing_file_path):
+    def report_printing_information(self, community_name, printing_data, xls_file_name):
         ''' 打印信息的报表 '''
+        community_path = os.path.join(self.__path, community_name)
+        full_xls_path = os.path.join(community_path, xls_file_name)
         fruit_lable = FruitLabel(printing_data)
         file_datas = fruit_lable.get_datas()
+        self.__community_labels[community_name] = file_datas.__len__()
         file_datas.insert(0, FruitLabel.TITLES)
-        Utils.write_data_to_xls(file_datas, printing_file_path)
+        Utils.write_data_to_xls(file_datas, full_xls_path)
 
     def report_of_sales(self, sales_data, sales_file_path):
         ''' 销售报表 '''
@@ -343,7 +347,7 @@ class XiaoBuReport(object):
     
     def report_of_revenue(self, revenue_data, revenue_file_path):
         ''' 营收报表 '''
-        revenue_report_title =('序号', '小区名称', '小区负责人', '电话', '小区营业额(元)', '负责人购买(元)', '订单总数', '时间', '备注')
+        revenue_report_title =('序号', '小区名称', '小区负责人', '电话', '小区营业额(元)', '负责人购买(元)', '标签总数（下单编号）', '时间', '备注')
         revenue_entries = self.__community_analysis_data(revenue_data)
         if not revenue_entries['xiaobu_turnover'] > 0: 
             print("警告：没有找到营收数据，营收报表生成失败!")
@@ -360,7 +364,7 @@ class XiaoBuReport(object):
             community_turnover = communities_data['community_turnover']
             dri_payment = communities_data['dri_payment']
             report_date = time.strftime('%Y-%m-%d', time.localtime(communities_data['end_timestamp']))
-            count_of_orders = communities_data['orders_of_count']
+            count_of_orders = self.__community_labels[community] if self.__community_labels.has_key(community) else 0 #communities_data['orders_of_count']
             mark = ""
             row_data = (idx, community, user, tel, community_turnover, dri_payment, count_of_orders, report_date, mark)
             report_data.append(row_data)
@@ -430,19 +434,20 @@ if  __name__ == '__main__':
     undelivered_orders = data_parser.filte_data(XiaoBuReport.TITLE_ORDER_STATUS, (XiaoBuReport.ORDER_STATUS_OF_UNDELIVERED))
     delivered_orders = data_parser.filte_data(XiaoBuReport.TITLE_ORDER_STATUS, (XiaoBuReport.ORDER_STATUS_OF_DELIVERED))
 
-    xbr.report_of_purchase(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('采购需求_%Y-%m-%d.xls'))) 
-    xbr.report_of_financial(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('财务需求_%Y-%m-%d.xls'))) 
-    xbr.report_of_sales(delivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小布销售统计_%Y-%m-%d.xls')))
-    xbr.report_of_revenue(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小区单次营收统计_%Y-%m-%d.xls')))
-
     # 按小区分类生成相关的报表
     undelivered_data = undelivered_orders[1:]
     communities = set(data_parser.get_data_from_column_title(XiaoBuReport.TITLE_COMMUNITY_POINT, undelivered_data))
     community_index = data_parser.index_of_key(XiaoBuReport.TITLE_COMMUNITY_POINT)
 
     for community in communities:
+        community_name = XiaoBuReport.format_community_name(community)
         community_data = filter(lambda d: d[community_index] == community, undelivered_data)
         community_data.insert(0, data_parser.get_header())
-        xbr.report_order_details_by_community(community, community_data, '订单详情.csv')
-        full_path_of_fruit_printing = os.path.join(report_path, community, '打印信息.xls') 
-        xbr.report_printing_information(community_data,full_path_of_fruit_printing)
+        xbr.report_order_details_by_community(community_name, community_data, '订单详情.csv')
+        xbr.report_printing_information(community_name, community_data, '打印信息.xls')
+
+
+    xbr.report_of_purchase(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('采购需求_%Y-%m-%d.xls'))) 
+    xbr.report_of_financial(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('财务需求_%Y-%m-%d.xls'))) 
+    xbr.report_of_sales(delivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小布销售统计_%Y-%m-%d.xls')))
+    xbr.report_of_revenue(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小区单次营收统计_%Y-%m-%d.xls')))
