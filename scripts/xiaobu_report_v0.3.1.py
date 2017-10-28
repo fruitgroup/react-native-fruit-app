@@ -255,7 +255,9 @@ class XiaoBuReport(object):
         datas = community_data_parser.get_data()
         index_of_community = community_data_parser.index_of_key(XiaoBuReport.TITLE_COMMUNITY_POINT)
         index_of_tel = community_data_parser.index_of_key(XiaoBuReport.TITLE_USER_PHONE)
-        index_of_payment_amount = community_data_parser.index_of_key(XiaoBuReport.TITLE_USER_PAYMENT_AMOUNT)
+        index_of_order = community_data_parser.index_of_key(XiaoBuReport.TITLE_ORDER_ID)
+        index_of_price = community_data_parser.index_of_key(XiaoBuReport.TITLE_PRODUCT_PRICE)
+        index_of_amount = community_data_parser.index_of_key(XiaoBuReport.TITLE_PRODUCT_AMOUNT)
         index_of_order_create_date = community_data_parser.index_of_key(XiaoBuReport.TITLE_ORDER_CREATED_DATE)
         analysis_entries = {}
 
@@ -263,26 +265,30 @@ class XiaoBuReport(object):
 
         for row in datas:
             community_name = XiaoBuReport.format_community_name(row[index_of_community])
-            user_payment_amount = float(row[index_of_payment_amount])
+            user_payment_amount = float(row[index_of_price]) * float(row[index_of_amount])
             timestamp = time.mktime(time.strptime(row[index_of_order_create_date], '%Y-%m-%d %H:%M:%S'))
             user_tel = row[index_of_tel]
             m = re.match('.*\s+(\d+)\s*$', row[index_of_community])
             tel = m.group(1) if m else "未知电话"
             user = XiaoBuReport.DRI_TEL_MAP[tel] if XiaoBuReport.DRI_TEL_MAP.has_key(tel) else "未知负责人"
+
+
             if not analysis_entries.has_key(community_name):
                 entry = {
                 'tel': tel, 
                 'user': user, 
                 'community': community_name, 
-                'orders_of_count': 1, 
-                'community_turnover': user_payment_amount, 
+                'community_turnover': 0, 
                 'start_timestamp': timestamp,
                 'end_timestamp': timestamp,
-                'dri_payment': 0.0
+                'dri_payment': 0.0,
+                'orders': [],
                 }
                 analysis_entries[community_name] = entry
-            
-            analysis_entries[community_name]['orders_of_count'] += 1
+
+            if not analysis_entries[community_name]['orders'].__contains__(row[index_of_order]):
+                analysis_entries[community_name]['orders'].append(row[index_of_order]) 
+
             analysis_entries[community_name]['community_turnover'] += user_payment_amount
             analysis_entries[community_name]['start_timestamp'] = timestamp if analysis_entries[community_name]['start_timestamp'] > timestamp else analysis_entries[community_name]['start_timestamp']
             analysis_entries[community_name]['end_timestamp'] = timestamp if analysis_entries[community_name]['end_timestamp'] < timestamp else analysis_entries[community_name]['end_timestamp']
@@ -293,6 +299,7 @@ class XiaoBuReport(object):
             xiaobo_turnover += user_payment_amount
 
         analysis_entries['xiaobu_turnover'] = xiaobo_turnover
+
         return analysis_entries
 
     def report_of_financial(self,financial_data, financial_file_path):
@@ -347,7 +354,7 @@ class XiaoBuReport(object):
     
     def report_of_revenue(self, revenue_data, revenue_file_path):
         ''' 营收报表 '''
-        revenue_report_title =('序号', '小区名称', '小区负责人', '电话', '小区营业额(元)', '负责人购买(元)', '标签总数（下单编号）', '时间', '备注')
+        revenue_report_title =('序号', '小区名称', '小区负责人', '电话', '小区营业额(元)', '负责人购买(元)', '营业额比例', '小区利润收入', '下单数','标签总数（下单编号）', '时间', '备注')
         revenue_entries = self.__community_analysis_data(revenue_data)
         if not revenue_entries['xiaobu_turnover'] > 0: 
             print("警告：没有找到营收数据，营收报表生成失败!")
@@ -363,10 +370,13 @@ class XiaoBuReport(object):
             tel = communities_data['tel']
             community_turnover = communities_data['community_turnover']
             dri_payment = communities_data['dri_payment']
+            turnover_rate = "%.2f%%" % ((community_turnover / xiaobu_turnover)*100)
+            community_profit = ""
+            count_of_orders =  communities_data['orders'].__len__()
             report_date = time.strftime('%Y-%m-%d', time.localtime(communities_data['end_timestamp']))
-            count_of_orders = self.__community_labels[community] if self.__community_labels.has_key(community) else 0 #communities_data['orders_of_count']
+            count_of_tags = self.__community_labels[community] if self.__community_labels.has_key(community) else 0 #communities_data['orders_of_count']
             mark = ""
-            row_data = (idx, community, user, tel, community_turnover, dri_payment, count_of_orders, report_date, mark)
+            row_data = (idx, community, user, tel, community_turnover, dri_payment, turnover_rate, community_profit, count_of_orders, count_of_tags, report_date, mark)
             report_data.append(row_data)
             idx += 1
         Utils.write_data_to_xls(report_data, revenue_file_path)   
@@ -425,10 +435,11 @@ if  __name__ == '__main__':
 
     CSV_DATA_PATH = sys.argv[1]
     raw_data = Utils.csv_data_from_file(CSV_DATA_PATH)
-
     xbr = XiaoBuReport('小布报表')
     report_path = xbr.get_report_path()
     print("报表路径: " + xbr.get_report_path())
+
+    Utils.write_data_to_csv(raw_data, os.path.join(report_path, os.path.basename(CSV_DATA_PATH)))
 
     data_parser = DataParser(raw_data)
     undelivered_orders = data_parser.filte_data(XiaoBuReport.TITLE_ORDER_STATUS, (XiaoBuReport.ORDER_STATUS_OF_UNDELIVERED))
