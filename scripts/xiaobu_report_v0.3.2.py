@@ -11,7 +11,6 @@ import re
 import datetime
 import time
 import codecs
-# from string import Template
 
 class DataParser(object):
     '''
@@ -210,7 +209,7 @@ class XiaoBuReport(object):
         os.makedirs(community_path)
         Utils.write_data_to_csv(detail_data, detail_csv_path)
 
-    def __fruit_summary_data(self, fruit_data):
+    def sort_data_by_fruit(self, fruit_data):
         data_parser = DataParser(fruit_data)
         datas = data_parser.get_data()
         fruit_names = data_parser.get_data_from_column_title(XiaoBuReport.TITLE_PRODUCT_NAME, datas)
@@ -223,7 +222,10 @@ class XiaoBuReport(object):
                 sorted_datas[fruit] = {'amount': int(fruit_amounts[index]), 'price': fruit_prices[index]}
             else:
                 sorted_datas[fruit] = {'amount': sorted_datas[fruit]['amount'] + int(fruit_amounts[index]), 'price': fruit_prices[index]}
+        return sorted_datas
 
+    def __fruit_summary_data(self, fruit_data):
+        sorted_datas = self.sort_data_by_fruit(fruit_data)
         row_datas = []
         all_keys = sorted_datas.keys()
         all_amounts = [sorted_datas[k]['amount'] for k in all_keys]
@@ -326,12 +328,7 @@ class XiaoBuReport(object):
         ''' 销售报表 '''
         sales_report_title =('序号', '小区名称', '小区负责人', '电话', '小布总营业额(元)', '小区营业额(元)', '负责人购买(元)', '营业额占比', '总利润', '小区负责人营收(元)', '统计时间段', '备注')
         sales_entries = self.__community_analysis_data(sales_data)
-        if not sales_entries['xiaobu_turnover'] > 0: 
-            print("警告：没有找到销售数据，销售报表生成失败!")
-            return
-
         xiaobu_turnover = sales_entries.pop('xiaobu_turnover')
-
         idx = 1
         report_data = [sales_report_title]
         for communities_data in sales_entries.values():
@@ -356,10 +353,6 @@ class XiaoBuReport(object):
         ''' 营收报表 '''
         revenue_report_title =('序号', '小区名称', '小区负责人', '电话', '小区营业额(元)', '负责人购买(元)', '营业额比例', '小区利润收入', '下单数','标签总数（下单编号）', '时间', '备注')
         revenue_entries = self.__community_analysis_data(revenue_data)
-        if not revenue_entries['xiaobu_turnover'] > 0: 
-            print("警告：没有找到营收数据，营收报表生成失败!")
-            return
-
         xiaobu_turnover = revenue_entries.pop('xiaobu_turnover')
 
         idx = 1
@@ -381,6 +374,18 @@ class XiaoBuReport(object):
             idx += 1
         Utils.write_data_to_xls(report_data, revenue_file_path)   
         
+    def report_of_logistics(self, logistics_data, logistics_fiile_path):
+        ''' 分装物流报表 '''
+        row_datas=[]
+        title = reduce(lambda t, v: list(set(t) | set(v.keys()))  ,logistics_data.values())
+        for community_name, sorted_data in logistics_data.iteritems():
+            row_data = map(lambda f: sorted_data[f]["amount"] if sorted_data.has_key(f) else 0, title)
+            row_datas.append([community_name]+ row_data)
+        title.insert(0, "明细")
+        row_datas.insert(0, title)
+        Utils.write_data_to_xls(row_datas, logistics_fiile_path)
+
+
 
 class Utils(object):
     ''' utils '''
@@ -428,37 +433,63 @@ class Utils(object):
                 xlsfile.write("</tbody>\n")
             xlsfile.write(xls_end_template)
 
-if  __name__ == '__main__':
-    if sys.argv.__len__() != 2:
-        print("usage: <script> <input_csv_file>")
-        sys.exit(-1)
+def main(input_file_path):
+    ''' 程序入口 函数'''
+    if not os.path.exists(input_file_path):
+        print("警告：输入文件不存在！")
+        return
 
-    CSV_DATA_PATH = sys.argv[1]
-    raw_data = Utils.csv_data_from_file(CSV_DATA_PATH)
+    raw_data = Utils.csv_data_from_file(input_file_path)
     xbr = XiaoBuReport('小布报表')
     report_path = xbr.get_report_path()
     print("报表路径: " + xbr.get_report_path())
 
-    Utils.write_data_to_csv(raw_data, os.path.join(report_path, os.path.basename(CSV_DATA_PATH)))
+    Utils.write_data_to_csv(raw_data, os.path.join(report_path, os.path.basename(input_file_path)))
 
     data_parser = DataParser(raw_data)
     undelivered_orders = data_parser.filte_data(XiaoBuReport.TITLE_ORDER_STATUS, (XiaoBuReport.ORDER_STATUS_OF_UNDELIVERED))
     delivered_orders = data_parser.filte_data(XiaoBuReport.TITLE_ORDER_STATUS, (XiaoBuReport.ORDER_STATUS_OF_DELIVERED))
-
+    both_delivered_and_undelivered_orders = data_parser.filte_data(XiaoBuReport.TITLE_ORDER_STATUS, (XiaoBuReport.ORDER_STATUS_OF_DELIVERED, XiaoBuReport.ORDER_STATUS_OF_UNDELIVERED))
     # 按小区分类生成相关的报表
     undelivered_data = undelivered_orders[1:]
     communities = set(data_parser.get_data_from_column_title(XiaoBuReport.TITLE_COMMUNITY_POINT, undelivered_data))
     community_index = data_parser.index_of_key(XiaoBuReport.TITLE_COMMUNITY_POINT)
 
+    sorted_data_by_communities = {}
     for community in communities:
         community_name = XiaoBuReport.format_community_name(community)
         community_data = filter(lambda d: d[community_index] == community, undelivered_data)
         community_data.insert(0, data_parser.get_header())
+        sorted_data_by_communities[community_name]=xbr.sort_data_by_fruit(community_data)
         xbr.report_order_details_by_community(community_name, community_data, '订单详情.csv')
         xbr.report_printing_information(community_name, community_data, '打印信息.xls')
 
+    if sorted_data_by_communities.keys().__len__() > 0:
+        xbr.report_of_logistics(sorted_data_by_communities, os.path.join(report_path, datetime.datetime.now().strftime('分装物流需求_%Y-%m-%d.xls')))
+    else:
+        print("警告：没有找到分装物流数据，分装物流报表生成失败!")
 
-    xbr.report_of_purchase(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('采购需求_%Y-%m-%d.xls'))) 
-    xbr.report_of_financial(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('财务需求_%Y-%m-%d.xls'))) 
-    xbr.report_of_sales(delivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小布销售统计_%Y-%m-%d.xls')))
-    xbr.report_of_revenue(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小区单次营收统计_%Y-%m-%d.xls')))
+    if  delivered_orders.__len__() > 1: 
+        xbr.report_of_sales(delivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小布销售统计_%Y-%m-%d.xls')))
+    else:
+        print("警告：没有找到销售数据，销售报表生成失败!")
+   
+    if both_delivered_and_undelivered_orders.__len__() > 1:
+        xbr.report_of_sales(both_delivered_and_undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('财务统计_%Y-%m-%d.xls')))
+    else:
+       print("警告：没有找到财务统计数据，财务统计报表生成失败!") 
+
+    if undelivered_data.__len__() > 1:
+        xbr.report_of_purchase(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('采购需求_%Y-%m-%d.xls'))) 
+        xbr.report_of_financial(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('财务需求_%Y-%m-%d.xls'))) 
+        xbr.report_of_revenue(undelivered_orders, os.path.join(report_path, datetime.datetime.now().strftime('小区单次营收统计_%Y-%m-%d.xls')))
+    else:
+        print("警告：没有找到待发货数据，采购报表生成失败!") 
+
+if  __name__ == '__main__':
+    if sys.argv.__len__() != 2:
+        print("usage: <script> <input_csv_file>")
+        sys.exit(-1)
+    main(sys.argv[1])
+
+ 
